@@ -17,46 +17,32 @@
 
 */
 
-//v1.9 copyright Comine.com 20160214U2010
-#ifndef MStringQueue_h
-#define MStringQueue_h
+//v1.0 copyright Comine.com 20170214T1045
+#ifndef MLicenseGPL_h
+#define MLicenseGPL_h
+
+/////////////////////////////////////////////////
+#include "MStdLib.h"
 
 //******************************************************
-//**  MStringQueue class
+//**  MLicenseGPL class
 //******************************************************
-class MStringQueue
+class MLicenseGPL
 	{
 	////////////////////////////////////////////////
-	int mQueueSize;							// Number of Queued Items
-	struct GNode *mFirstNode;				// Always points to a dummy node
-	struct GNode *mLastNode;				// Last Node in list
-	struct GNode *mReadNode;				// Current Read Node
-
-	////////////////////////////////////////////////
-	void ClearObject(void);
 	
 	////////////////////////////////////////////////
+	void ClearObject(void);
+
+	////////////////////////////////////////////////
 	public:
-	MStringQueue(void);
-	explicit MStringQueue(bool create);
-	~MStringQueue(void);
+	MLicenseGPL(bool construct=false);
+	~MLicenseGPL(void);
 	bool Create(void);
 	bool Destroy(void);
-	bool Enqueue(const char *string);
-	bool Enqueue(const MStringQueue &queue);
-	bool Dequeue(void);
-	int GetQueueLength(void);
-	const char *GetFront(void);					// Returns first item in List
-	bool Print(void);							// Print out the Queue
-
-	// Reader Code
-	bool ReadReset(void);
-	bool Read(void);
-	const char *ReadGet(void);
-
-	// Extra Operations
-	bool Sort(void);							// Sort in Alphabetical Order + Will Reset the read
+	const char *Get(void);				// Get License String
+	bool Print(void);					// Print out the license
 	};
 
-#endif // MStringQueue_h
+#endif // MLicenseGPL_h
 

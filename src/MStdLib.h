@@ -1,36 +1,23 @@
-/*
-Copyright (C) 2011-2014, Comine.com ( profdevi@ymail.com )
-All rights reserved.
+/*    
+    MFileType.exe : Shows the type of a file
+    Copyright (C) 2017  Comine.com
 
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions
-are met:
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
 
-- Redistributions of source code must retain the above copyright notice,
-  this list of conditions and the following disclaimer.
-- Redistributions in binary form must reproduce the above copyright notice,
-  this list of conditions and the following disclaimer in the documentation
-  and/or other materials provided with the distribution.
-- The the names of the contributors of this project may not be used to 
-  endorse or promote products derived from this software without specific 
-  prior written permission.
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
 
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-`AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE FOUNDATION OR
-CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
-EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
-PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
-PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
-LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
-NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-
-//v2.10 copyright Comine.com 20160720W0608
+//v2.14 copyright Comine.com 20170309R0657
 #ifndef MStdLib_h
 #define MStdLib_h
 
@@ -57,11 +44,15 @@ Note Visual Studio
 	#if (_MSC_VER>1300 )
 
 		#if defined(WINAPI_FAMILY)
-
-			#ifndef MSTDLIB_OS_WINDOWSRT
-			#define MSTDLIB_OS_WINDOWSRT						(1)
-			#endif // MSTDLIB_OS_WINDOWSRT
-
+			#if defined(WINAPI_FAMILY_DESKTOP_APP)
+				#ifndef MSTDLIB_OS_WINDOWS
+				#define MSTDLIB_OS_WINDOWS							(1)
+				#endif // MSTDLIB_OS_WINDOWS			
+			#else
+				#ifndef MSTDLIB_OS_WINDOWSRT
+				#define MSTDLIB_OS_WINDOWSRT						(1)
+				#endif // MSTDLIB_OS_WINDOWSRT
+			#endif 
 		#else 
 
 			#ifndef MSTDLIB_OS_WINDOWS
@@ -300,7 +291,13 @@ bool MStdCTime(char *buf,int bufsize,time_t *tm);		// Convert time into a string
 bool MStdAtExit(void fun(void));						// Exit Function
 bool MStdFileRemove(const char *filename);				// Remove a file
 bool MStdFileRename(const char *filesrc,const char *filetarget);	// Rename a file
+bool MStdFileCopy(const char *srcfile,const char *dstfile
+	,bool stopifexists=false,bool erroronfail=false);	// Copy source file to target
 bool MStdFileExists(const char *filename);				// Check if file exists
+bool MStdFileIsBinary(const char *filename);			// Check if file is binary
+bool MStdFileReadText(const char *filename,char *buffer
+		,int &size);									// Read from file into buffer
+bool MStdFileWriteText(const char *filename,const char *data);	// Write a text file
 bool MStdExec(const char *cmd);							// Execute Command
 
 ///////////////////////////////////////////////////
@@ -324,6 +321,9 @@ int MStdGetMidIndex(const double *data,int datacount);	// Get the first index of
 void MStdSRand(void);									// Seed based on time
 void MStdSRand(int seed);								// Seed
 int MStdRand(int range=32767);							// Weak Random Number
+
+/////////////////////////////////////////////////
+bool MStdGetUUID(char buf[],int buflen);
 
 //*******************************************************************
 //** Template Functions
@@ -1515,11 +1515,28 @@ class MStdArray
 	//////////////////////////////////////////////////////
 	MStdArray(int length)
 		{
+		mArray = 0;
+		mArrayLength = 0;
+
 		if(Create(length)==false)
 			{
 			return;
 			}
 		}
+
+
+	//////////////////////////////////////////////////////
+	MStdArray(MStdArray &refobj,int newlength=0)
+		{
+		mArray = 0;
+		mArrayLength = 0;
+
+		if(Create(refobj,newlength)==false)
+			{
+			return;
+			}
+		}
+
 
 	//////////////////////////////////////////////////////
 	~MStdArray(void)
@@ -1532,7 +1549,7 @@ class MStdArray
 		{
 		Destroy();
 
-		mArray=new DataType[length];
+		mArray=new(std::nothrow) DataType[length];
 		if(mArray==0)
 			{
 			return false;
@@ -1541,6 +1558,37 @@ class MStdArray
 		mArrayLength=length;
 		return true;
 		}
+
+
+	////////////////////////////////////////////////////////
+	bool Create(MStdArray &refobj,int newlength=0)
+		{
+		MStdAssert(refobj.mArrayLength>0);
+
+		// If Just Copy Constructed from original, keep same size
+		if(newlength<=0) { newlength=refobj.mArrayLength; }
+
+		// Implemenation should not modify members when refobj is current object.
+		DataType *newarray=new(std::nothrow) DataType[newlength];
+		if(newarray==0)
+			{
+			return false;
+			}
+
+		const int maxcopy=MStdGetMin(newlength,refobj.mArrayLength);
+		for(int i=0;i<maxcopy;++i)
+			{
+			// Copy Construct new elements
+			newarray[i] = refobj.mArray[i];
+			}
+
+		Destroy();
+		mArray=newarray;
+		mArrayLength=newlength;
+
+		return true;
+		}
+
 
 	////////////////////////////////////////////////////////
 	bool Destroy(void)
@@ -1580,6 +1628,26 @@ class MStdArray
 		{
 		return mArrayLength;
 		}
+
+	/////////////////////////////////////////////////
+	bool Swap(MStdArray &refobj)
+		{
+		int tmplength=refobj.mArrayLength;
+		refobj.mArrayLength=mArrayLength;
+		mArrayLength=tmplength;
+
+		DataType *tmparray=refobj.mArray;
+		refobj.mArray=mArray;
+		mArray=tmparray;
+
+		return true;
+		}
+
+	//////////////////////////////////////////////////
+	bool operator=(MStdArray &refobj)
+		{
+		return Create(refobj);
+		}
 	};
 
 
@@ -1589,6 +1657,14 @@ bool MStdStrCpy(char *outstr,int maxoutlen,const wchar_t *str);		// Convert wide
 bool MStdStrCpy(wchar_t *outstr,int maxoutlen,const char *str);		// Convert asciiz string to wide unicode
 bool MStdStrCpy(MStdArray<wchar_t> &strout,const char *str);		// Convert ascii strin to wide
 bool MStdStrCpy(MStdArray<char> &strout,const wchar_t *str);		// Convert wide string to asciiz
+
+////////////////////////////////////////////////
+// Path Operations
+bool MStdPathSetSlash(char *path);										// Set slashes to forward slash
+bool MStdPathGetAbsolute(const char *path,MStdArray<char> &abspath);	// Get Absolute path
+bool MStdDirGet(MStdArray<char> &path);									// Get Current working directory
+bool MStdFileReadText(const char *filename,MStdArray<char> &data);		// Read from file into buffer
+
 
 #endif // MStdLib_h
 

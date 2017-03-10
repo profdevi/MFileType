@@ -1,36 +1,23 @@
-/*
-Copyright (C) 2011-2014, Comine.com ( profdevi@ymail.com )
-All rights reserved.
+/*    
+    MFileType.exe : Shows the type of a file
+    Copyright (C) 2017  Comine.com
 
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions
-are met:
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
 
-- Redistributions of source code must retain the above copyright notice,
-  this list of conditions and the following disclaimer.
-- Redistributions in binary form must reproduce the above copyright notice,
-  this list of conditions and the following disclaimer in the documentation
-  and/or other materials provided with the distribution.
-- The the names of the contributors of this project may not be used to 
-  endorse or promote products derived from this software without specific 
-  prior written permission.
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
 
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-`AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE FOUNDATION OR
-CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
-EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
-PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
-PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
-LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
-NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-
-//v1.7 copyright Comine.com 20160816T1741
+//v1.8 copyright Comine.com 20170310F0657
 #include "MStdLib.h"
 #include "MFile.h"
 #include "MFileOps.h"
@@ -50,18 +37,20 @@ struct GFileTypes
 	const char *FileInfo;
 	const char *FileExtension;
 	const char *HeaderPrefix;
-	bool (*ExtraCheck)(const unsigned char data[GMaxHeaderSize]);
+	bool (*ExtraCheck)(const unsigned char data[GMaxHeaderSize],const char *&extrainfo);
 	};
 
 
 //////////////////////////////////////////////////////
-static bool GIsMSDocFile(const unsigned char data[GMaxHeaderSize]);
-static bool GIsMSExcellFile(const unsigned char data[GMaxHeaderSize]);
-static bool GIsMSExcellFile2(const unsigned char data[GMaxHeaderSize]);
-static bool GIsMSPowerPointFile(const unsigned char data[GMaxHeaderSize]);
-static bool GIsMSPowerPointFile2(const unsigned char data[GMaxHeaderSize]);
+static bool GIsMSDocFile(const unsigned char data[GMaxHeaderSize],const char *&extrainfo);
+static bool GIsMSExec(const unsigned char data[GMaxHeaderSize],const char *&extrainfo);
+static bool GIsMSExcellFile(const unsigned char data[GMaxHeaderSize],const char *&extrainfo);
+static bool GIsMSExcellFile2(const unsigned char data[GMaxHeaderSize],const char *&extrainfo);
+static bool GIsMSPowerPointFile(const unsigned char data[GMaxHeaderSize],const char *&extrainfo);
+static bool GIsMSPowerPointFile2(const unsigned char data[GMaxHeaderSize],const char *&extrainfo);
 
 //////////////////////////////////////////////////////
+// Last Updated 20080302U15
 // See Ref: http://www.garykessler.net/library/file_sigs.html
 static GFileTypes GArray[]=
 	{
@@ -74,7 +63,7 @@ static GFileTypes GArray[]=
 	MBFTE_CUR,"Windows Cursor File",".ico","00000200",NULL,
 	MBFTE_DOC,"MS Office Doc File",".doc","d0cf11e0a1b11ae1",GIsMSDocFile,
 	MBFTE_ELF,"Unix elf","","7f454c46",NULL,
-	MBFTE_EXE,"MS-DOS, OS/2 or MS Windows",".exe","4d5a",NULL,
+	MBFTE_EXE,"MS-DOS, OS/2 or MS Windows",".exe","4d5a",GIsMSExec,
 	MBFTE_FIG,"Xfig format",".fig","23464947",NULL,
 	MBFTE_FITS,"FITS format",".fits","53494d504c45",NULL,
 	MBFTE_GIF,"GIF format",".gif","47494638",NULL,
@@ -114,14 +103,55 @@ static GFileTypes GArray[]=
 	MBFTE_XPM,"XPM format",".xpm","2f2a2058504d202a2f",NULL,
 	MBFTE_Z,"Compress",".Z","1f9d",NULL,
 	MBFTE_ZIP,"pkzip format",".zip","504b0304",NULL,
-		
+
 	// Last Entry
-	{MBFTE_UNKNOWN,0,0,0,NULL}
+	MBFTE_UNKNOWN,0,0,0,NULL
+	};
+
+
+//////////////////////////////////////////////////////
+// Hold Information of the PE Format from microsoft
+struct GPEMachineIDInfo
+	{
+	unsigned int MachineID;
+	const char *Info;
 	};
 
 
 ////////////////////////////////////////////////////////////////
-static bool GIsMSDocFile(const unsigned char data[GMaxHeaderSize])
+static GPEMachineIDInfo GPEMachineInfoList[]=
+	{
+	0x0,"Any Machine Type",
+	0x1d3,"Matsushita AM33",
+	0x8664,"AMD x64 - 64 bit",
+	0x1c0,"ARM little endian",
+	0xaa64,"ARM64 little endian",
+	0x1c4,"ARM Thumb-2 little endian",
+	0xebc,"EFI byte code",
+	0x14c,"Intel 386 -32 bit",
+	0x200,"Intel Itanium processor family",
+	0x9041,"Mitsubishi M32R little endian",
+	0x266,"MIPS16",
+	0x366,"MIPS with FPU",
+	0x466,"MIPS16 with FPU",
+	0x1f0,"Power PC little endian",
+	0x1f1,"Power PC with floating point support",
+	0x166,"MIPS little endian",
+	0x5032,"RISC-V 32-bit address space",
+	0x5064,"RISC-V 64-bit address space",
+	0x5128,"RISC-V 128-bit address space",
+	0x1a2,"Hitachi SH3",
+	0x1a3,"Hitachi SH3 DSP",
+	0x1a6,"Hitachi SH4",
+	0x1a8,"Hitachi SH5",
+	0x1c2,"Thumb",
+	0x169,"MIPS little-endian WCE v2",
+	0,0	
+	};
+
+
+////////////////////////////////////////////////////////////////
+static bool GIsMSDocFile(const unsigned char data[GMaxHeaderSize],const char *&extrainfo)
 	{
 	// Sub header
 	if(data[512]!=0xEC) { return false; }
@@ -132,8 +162,39 @@ static bool GIsMSDocFile(const unsigned char data[GMaxHeaderSize])
 	return true;
 	}
 
+
 ////////////////////////////////////////////////////////////////
-static bool GIsMSExcellFile(const unsigned char data[GMaxHeaderSize])
+static bool GIsMSExec(const unsigned char data[GMaxHeaderSize],const char *&extrainfo)
+	{
+	// PECOFF Documentation from Microsoft
+	const int peoffset=data[0x3c]+256*data[0x3c+1];
+	if(peoffset<0 || peoffset>1000) { return true; }
+
+	// Check PE Header
+	if(data[peoffset]!=0x50) { return false; }
+	if(data[peoffset+1]!=0x45) { return false; }
+	if(data[peoffset+2]!=0) { return false; }
+	if(data[peoffset+3]!=0) { return false; }
+
+	const unsigned int machineid=256*data[peoffset+5]+data[peoffset+4];
+
+	for(int i=0;GPEMachineInfoList[i].Info!=0;++i)
+		{
+		const GPEMachineIDInfo *item=GPEMachineInfoList+i;
+		MStdAssert(item!=0);
+	
+		if(item->MachineID!=machineid) { continue; }
+
+		extrainfo=item->Info;
+		return true;
+		}
+	
+	return true;
+	}
+
+
+////////////////////////////////////////////////////////////////
+static bool GIsMSExcellFile(const unsigned char data[GMaxHeaderSize],const char *&extrainfo)
 	{
 	// Sub header
 	if(data[512]!=0xFD) { return false; }
@@ -155,7 +216,7 @@ static bool GIsMSExcellFile(const unsigned char data[GMaxHeaderSize])
 
 
 ////////////////////////////////////////////////////////////////
-static bool GIsMSExcellFile2(const unsigned char data[GMaxHeaderSize])
+static bool GIsMSExcellFile2(const unsigned char data[GMaxHeaderSize],const char *&extrainfo)
 	{
 	// This is just a guess for my files
 	// Sub header
@@ -170,7 +231,7 @@ static bool GIsMSExcellFile2(const unsigned char data[GMaxHeaderSize])
 
 
 /////////////////////////////////////////////////////////////////
-static bool GIsMSPowerPointFile(const unsigned char data[GMaxHeaderSize])
+static bool GIsMSPowerPointFile(const unsigned char data[GMaxHeaderSize],const char *&extrainfo)
 	{
 	if(data[512]!=0xFD) { return false;  }
 	if(data[513]!=0xFF) { return false;  }
@@ -187,7 +248,7 @@ static bool GIsMSPowerPointFile(const unsigned char data[GMaxHeaderSize])
 
 
 /////////////////////////////////////////////////////////////////
-static bool GIsMSPowerPointFile2(const unsigned char data[GMaxHeaderSize])
+static bool GIsMSPowerPointFile2(const unsigned char data[GMaxHeaderSize],const char *&extrainfo)
 	{
 	if(data[512]!=0xFD) { return false;  }
 	if(data[513]!=0xFF) { return false;  }
@@ -196,7 +257,6 @@ static bool GIsMSPowerPointFile2(const unsigned char data[GMaxHeaderSize])
 
 	return true;
 	}
-
 
 
 ////////////////////////////////////////////////////////////////
@@ -235,6 +295,7 @@ static bool GIsFile(const char *filename)
 //******************************************************
 void MBinFileType::ClearObject(void)
 	{
+	mExtraInfo=0;
 	mIndex=0;
 	}
 
@@ -336,7 +397,7 @@ bool MBinFileType::Create(const char *filename)
 
 		// Now Check if extra check is nexessary
 		if(GArray[mIndex].ExtraCheck!=NULL && 
-				GArray[mIndex].ExtraCheck((unsigned char *)buffer.GetBuffer())==false)
+				GArray[mIndex].ExtraCheck((unsigned char *)buffer.GetBuffer(),mExtraInfo)==false)
 			{ continue; }
 
 		return true;
@@ -412,6 +473,13 @@ const char *MBinFileType::GetFileInfo(void)
 const char *MBinFileType::GetFileExtension(void)
 	{
 	return GArray[mIndex].FileExtension;
+	}
+
+
+//////////////////////////////////////////////////
+const char *MBinFileType::GetExtraInfo(void)
+	{
+	return mExtraInfo;
 	}
 
 
